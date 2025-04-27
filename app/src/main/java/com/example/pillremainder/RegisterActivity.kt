@@ -4,22 +4,21 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.example.pillremainder.ui.screens.AppNavigation
+import com.example.pillremainder.ui.screens.RegisterScreen
 import com.example.pillremainder.ui.theme.CreateCourseScreenTheme
-import com.google.firebase.auth.FirebaseAuth
 
-class MainActivity : ComponentActivity() {
+class RegisterActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Проверяем, аутентифицирован ли пользователь
-        val auth = FirebaseAuth.getInstance()
-        val startDestination = if (auth.currentUser != null) "createCourse" else "login"
-
         setContent {
             CreateCourseScreenTheme {
-                AppNavigation(startDestination = startDestination)
+                RegisterScreen(
+                    onRegisterSuccess = {
+                        //startActivity(Intent(this, LoginActivity::class.java))
+                        finish()
+                    }
+                )
             }
         }
     }
