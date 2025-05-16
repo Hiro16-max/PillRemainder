@@ -8,4 +8,6 @@ data class MedicineCourse(
     val dosePerIntake: Double = 0.0, // Количество таблеток за приём (поддерживает 0.25, 0.5 и т.д.)
     val availablePills: Int = 0, // Количество имеющихся таблеток
     val notificationsEnabled: Boolean = true // Уведомления включены по умолчанию
-)
+) {
+    val timesPerDay: Int = intakeTime.count()
+}

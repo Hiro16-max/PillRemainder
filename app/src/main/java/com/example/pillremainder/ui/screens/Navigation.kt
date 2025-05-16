@@ -118,6 +118,7 @@ fun AppNavigation(
         composable("course/new") {
             CourseScreen(
                 courseId = null,
+                onBack = { navController.popBackStack("main/medications", inclusive = false) },
                 onSaveSuccess = { navController.navigate("main/medications") {
                     popUpTo("course/new") { inclusive = true }
                 }
@@ -128,6 +129,7 @@ fun AppNavigation(
             val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
             CourseScreen(
                 courseId = courseId,
+                onBack = { navController.popBackStack("main/medications", inclusive = false) },
                 onSaveSuccess = { navController.navigate("main/medications") {
                     popUpTo("course/new") { inclusive = true }
                 }

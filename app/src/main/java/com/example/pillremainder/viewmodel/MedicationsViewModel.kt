@@ -128,8 +128,4 @@ class MedicationsViewModel(
             }
         }
     }
-
-    suspend fun getIntakeHistory(courseId: String, time: String): Result<List<IntakeRecord>> {
-        return repository.getIntakeHistory(courseId, time)
-    }
 }

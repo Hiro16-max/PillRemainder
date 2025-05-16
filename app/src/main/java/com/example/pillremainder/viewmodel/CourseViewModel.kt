@@ -171,6 +171,21 @@ class CourseViewModel(
             currentState.copy(errorMessage = null)
         }
     }
+
+    fun deleteCourse() {
+        if (!_uiState.value.isEditMode) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = repository.deleteCourse(_uiState.value.courseId)
+            _uiState.update {
+                it.copy(
+                    errorMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message,
+                    isDeleted = result.isSuccess,
+                    isLoading = false
+                )
+            }
+        }
+    }
 }
 
 data class CourseUiState(
@@ -185,5 +200,6 @@ data class CourseUiState(
     val isEditMode: Boolean = false,
     val errorMessage: String? = null,
     val isSaved: Boolean = false,
+    val isDeleted: Boolean = false,
     val isLoading: Boolean = false
 )

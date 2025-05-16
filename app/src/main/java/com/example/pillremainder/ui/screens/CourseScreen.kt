@@ -2,6 +2,7 @@ package com.example.pillremainder.ui.screens
 
 import android.app.TimePickerDialog
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -28,7 +29,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -38,7 +38,10 @@ import com.example.pillremainder.viewmodel.CourseViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 
 val days = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
@@ -46,6 +49,7 @@ val days = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 @Composable
 fun CourseScreen(
     onSaveSuccess: () -> Unit,
+    onBack: () -> Unit,
     courseId: String? = null
 ) {
     val viewModel: CourseViewModel = viewModel(
@@ -57,11 +61,20 @@ fun CourseScreen(
     )
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    LaunchedEffect(uiState.isSaved) {
-        if (uiState.isSaved) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.isSaved, uiState.isDeleted) {
+        if (uiState.isSaved || uiState.isDeleted) {
             onSaveSuccess()
         }
     }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     if (uiState.isLoading) {
         Box(
             modifier = Modifier
@@ -75,17 +88,42 @@ fun CourseScreen(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
-            floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { viewModel.saveCourse() },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier
-                        .systemBarsPadding()
-                        .padding(16.dp)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = "Сохранить")
-                }
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = if (uiState.isEditMode) "Редактировать курс" else "Создать курс",
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            Log.d("CourseScreen", "Back button clicked, calling onBack")
+                            onBack()
+                        }) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Назад",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    },
+                    actions = {
+                        if (uiState.isEditMode) {
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Удалить курс",
+                                    tint = Color.Red
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(48.dp)) // Балансировка для navigationIcon
+                        }
+                    }
+                )
             }
         ) { paddingValues ->
             Column(
@@ -96,14 +134,6 @@ fun CourseScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Заголовок
-                Text(
-                    text = if (uiState.isEditMode) "Редактировать курс" else "Создать курс",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-
                 // Секция: Основная информация
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -197,10 +227,9 @@ fun CourseScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 contentPadding = PaddingValues(vertical = 1.dp)
                             ) {
-                                items(days) { day -> // тут всё корректно
+                                items(days) { day ->
                                     Log.d("FilterChip", "day = $day")
                                     FilterChip(
-
                                         selected = uiState.selectedDays.contains(day),
                                         onClick = { viewModel.toggleDay(day) },
                                         enabled = true,
@@ -208,7 +237,7 @@ fun CourseScreen(
                                             Text(
                                                 text = day,
                                                 style = MaterialTheme.typography.labelMedium,
-                                                color = if (uiState.selectedDays.contains(day)) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface, // Явный цвет текста
+                                                color = if (uiState.selectedDays.contains(day)) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                                                 modifier = Modifier.padding(horizontal = 0.dp)
                                             )
                                         },
@@ -412,8 +441,57 @@ fun CourseScreen(
                     }
                 }
 
-                // Spacer для FAB
-                Spacer(modifier = Modifier.height(80.dp))
+                // Кнопка сохранения
+                Button(
+                    onClick = { viewModel.saveCourse() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Сохранить")
+                    }
+                }
+
+                // Spacer для нижнего отступа
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Диалоговое окно подтверждения удаления
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Удалить курс") },
+                    text = { Text("Вы уверены, что хотите удалить этот курс? Все связанные данные будут удалены.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.deleteCourse()
+                                showDeleteDialog = false
+                            }
+                        ) {
+                            Text("Удалить", color = Color.Red)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDialog = false }) {
+                            Text("Отмена")
+                        }
+                    }
+                )
             }
         }
     }

@@ -5,17 +5,28 @@ import com.example.pillremainder.data.model.MedicineCourse
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseException
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import java.util.UUID
 
-data class IntakeRecord(val date: String, val status: String) // "taken" или "refused"
+data class IntakeRecord(
+    val courseId: String,
+    val time: String, // Например, "03:00"
+    val date: String, // Например, "2025-05-15"
+    val status: String? // "taken", "refused" или null (missed)
+)
 
 class CourseRepository {
     private val database = FirebaseDatabase.getInstance()
@@ -26,6 +37,7 @@ class CourseRepository {
 
     private val _cachedIntakeStatuses = MutableStateFlow<Map<String, String?>>(emptyMap())
 
+    private val _cachedIntakeHistories = MutableStateFlow<Map<String, List<IntakeRecord>>>(emptyMap())
     private var isInitialized = false
 
     suspend fun initialize() {
@@ -140,6 +152,27 @@ class CourseRepository {
         }
     }
 
+    suspend fun deleteCourse(courseId: String): Result<Unit> {
+        return try {
+            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
+            // Удаляем курс
+            val courseRef = database.getReference("Users").child(userId).child("courses").child(courseId)
+            courseRef.removeValue().await()
+            // Удаляем связанные записи о приемах
+            val intakesRef = database.getReference("Users").child(userId).child("intakes").child(courseId)
+            intakesRef.removeValue().await()
+            // Обновляем кэш
+            _cachedCourses.update { courses -> courses.filter { it.courseId != courseId } }
+            _cachedIntakeStatuses.update { statuses -> statuses.filterKeys { !it.startsWith("$courseId-") } }
+            _cachedIntakeHistories.update { histories -> histories.filterKeys { !it.startsWith("$courseId-") } }
+            Log.d("CourseRepository", "Course deleted: $courseId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("CourseRepository", "Failed to delete course: $courseId, error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     suspend fun markIntake(courseId: String, time: String): Result<Unit> {
         return try {
             val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
@@ -192,20 +225,106 @@ class CourseRepository {
         }
     }
 
-    suspend fun getIntakeHistory(courseId: String, time: String): Result<List<IntakeRecord>> {
+    suspend fun getIntakeHistory(
+        courseId: String,
+        startDate: String,
+        endDate: String
+    ): Result<List<IntakeRecord>> {
         return try {
-            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
-            val intakeRef = database.getReference("Users").child(userId).child("intakes").child(courseId).child(time).child("history")
-            val snapshot = intakeRef.get().await()
-            val history = snapshot.children.mapNotNull { snap ->
-                val date = snap.key ?: return@mapNotNull null
-                val status = snap.getValue(String::class.java) ?: return@mapNotNull null
-                IntakeRecord(date, status)
+            val cacheKey = "$courseId-$startDate-$endDate"
+            val cachedRecords = _cachedIntakeHistories.value[cacheKey]
+            if (cachedRecords != null) {
+                Log.d("CourseRepository", "Returning cached history for courseId=$courseId: ${cachedRecords.size} records")
+                return Result.success(cachedRecords)
             }
-            Log.d("CourseRepository", "Intake history fetched: courseId=$courseId, time=$time, records=${history.size}")
-            Result.success(history)
+
+            val records = mutableListOf<IntakeRecord>()
+            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
+
+            // Проверяем оба пути
+            val paths = listOf(
+                "intakes/$courseId",
+                "Users/$userId/intakes/$courseId"
+            )
+
+            for (path in paths) {
+                Log.d("CourseRepository", "Trying path: $path")
+                val snapshot = withTimeoutOrNull(3000) {
+                    try {
+                        database.getReference(path).get().await()
+                    } catch (e: DatabaseException) {
+                        Log.e("CourseRepository", "Database error for path $path: ${e.message}", e)
+                        null
+                    }
+                } ?: continue
+
+                Log.d("CourseRepository", "Snapshot for courseId=$courseId at $path: exists=${snapshot.exists()}, childrenCount=${snapshot.childrenCount}, value=${snapshot.value}")
+                if (snapshot.exists()) {
+                    for (timeSnapshot in snapshot.children) {
+                        val timeKey = timeSnapshot.key ?: continue
+                        val time = timeKey.replace("_", ":")
+                        val historySnapshot = timeSnapshot.child("history")
+                        Log.d("CourseRepository", "Processing timeKey=$timeKey, historyChildren=${historySnapshot.childrenCount}")
+                        for (historyEntry in historySnapshot.children) {
+                            val date = historyEntry.key ?: continue
+                            if (date >= startDate && date <= endDate) {
+                                val status = historyEntry.getValue(String::class.java)
+                                records.add(
+                                    IntakeRecord(
+                                        courseId = courseId,
+                                        time = time,
+                                        date = date,
+                                        status = status
+                                    )
+                                )
+                                Log.d("CourseRepository", "Added record: courseId=$courseId, time=$time, date=$date, status=$status")
+                            }
+                        }
+                    }
+                    if (records.isNotEmpty()) break // Выходим, если нашли данные
+                } else {
+                    Log.w("CourseRepository", "No data found at $path")
+                }
+            }
+
+            if (records.isEmpty()) {
+                Log.w("CourseRepository", "No records found for courseId=$courseId in any path")
+            }
+
+            _cachedIntakeHistories.update { it + (cacheKey to records) }
+            Log.d("CourseRepository", "Fetched intake history for courseId=$courseId: ${records.size} records")
+            Result.success(records)
         } catch (e: Exception) {
-            Log.e("CourseRepository", "Failed to fetch intake history: courseId=$courseId, time=$time, error=${e.message}")
+            Log.e("CourseRepository", "Failed to fetch intake history for courseId=$courseId: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAllIntakeHistories(
+        courseIds: List<String>,
+        startDate: String,
+        endDate: String
+    ): Result<Map<String, List<IntakeRecord>>> {
+        return try {
+            val histories = mutableMapOf<String, List<IntakeRecord>>()
+            withContext(Dispatchers.IO) {
+                val chunkedCourseIds = courseIds.chunked(3)
+                for (chunk in chunkedCourseIds) {
+                    val deferred = chunk.map { courseId ->
+                        async {
+                            val result = getIntakeHistory(courseId, startDate, endDate)
+                            courseId to (if (result.isSuccess) result.getOrNull() ?: emptyList() else emptyList())
+                        }
+                    }
+                    deferred.awaitAll().forEach { (courseId, records) ->
+                        histories[courseId] = records
+                    }
+                }
+            }
+            Log.d("CourseRepository", "Fetched histories for ${courseIds.size} courses: ${histories.mapValues { it.value.size }}")
+            Result.success(histories)
+        } catch (e: Exception) {
+            Log.e("CourseRepository", "Failed to fetch all intake histories: ${e.message}", e)
             Result.failure(e)
         }
     }
