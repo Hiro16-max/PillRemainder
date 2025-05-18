@@ -28,10 +28,12 @@ import com.example.pillremainder.viewmodel.StatsViewModel
 
 @Composable
 fun AppNavigation(
-    navController: NavHostController = rememberNavController(),
     startDestination: String,
-    repository: CourseRepository
+    repository: CourseRepository,
+    courseIdFromNotification: String? = null,
+    timeFromNotification: String? = null
 ) {
+    val navController = rememberNavController()
     NavHost(navController = navController, startDestination = startDestination) {
         composable("auth") {
             AuthScreen(
@@ -73,13 +75,7 @@ fun AppNavigation(
             ) { padding ->
                 when (tab) {
                     "home" -> HomeScreen(
-                        viewModel = viewModel(
-                            factory = object : ViewModelProvider.Factory {
-                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                    return MedicationsViewModel(repository, ScreenMode.TODAY) as T
-                                }
-                            }
-                        ),
+                        viewModel = MedicationsViewModel(repository, ScreenMode.TODAY),
                         navController = navController,
                         onNavigateToCourse = { courseId ->
                             if (courseId == null) {
@@ -89,15 +85,12 @@ fun AppNavigation(
                             }
                         },
                         modifier = Modifier.padding(padding),
+                        courseRepository = repository,
+                        courseIdFromNotification = courseIdFromNotification,
+                        timeFromNotification = timeFromNotification
                     )
                     "medications" -> MedicationsScreen(
-                        viewModel = viewModel(
-                            factory = object : ViewModelProvider.Factory {
-                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                    return MedicationsViewModel(repository, ScreenMode.LIBRARY) as T
-                                }
-                            }
-                        ),
+                        viewModel = MedicationsViewModel(repository, ScreenMode.LIBRARY),
                         navController = navController,
                         onNavigateToCourse = { courseId ->
                             if (courseId == null) {
@@ -118,10 +111,12 @@ fun AppNavigation(
         composable("course/new") {
             CourseScreen(
                 courseId = null,
+                repository = repository,
                 onBack = { navController.popBackStack("main/medications", inclusive = false) },
-                onSaveSuccess = { navController.navigate("main/medications") {
-                    popUpTo("course/new") { inclusive = true }
-                }
+                onSaveSuccess = {
+                    navController.navigate("main/medications") {
+                        popUpTo("course/new") { inclusive = true }
+                    }
                 }
             )
         }
@@ -129,10 +124,12 @@ fun AppNavigation(
             val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
             CourseScreen(
                 courseId = courseId,
+                repository = repository,
                 onBack = { navController.popBackStack("main/medications", inclusive = false) },
-                onSaveSuccess = { navController.navigate("main/medications") {
-                    popUpTo("course/new") { inclusive = true }
-                }
+                onSaveSuccess = {
+                    navController.navigate("main/medications") {
+                        popUpTo("course/$courseId") { inclusive = true }
+                    }
                 }
             )
         }

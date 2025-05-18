@@ -36,6 +36,7 @@ import com.example.pillremainder.data.model.MedicineCourse
 import com.example.pillremainder.data.repository.CourseRepository
 import com.example.pillremainder.data.utils.formatDose
 import com.example.pillremainder.data.utils.getTabletForm
+import com.example.pillremainder.notifications.NotificationScheduler
 import com.example.pillremainder.viewmodel.ScreenMode
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
@@ -44,11 +45,13 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(
-    viewModel: MedicationsViewModel = viewModel { MedicationsViewModel(mode = ScreenMode.TODAY) },
+    viewModel: MedicationsViewModel = MedicationsViewModel(mode = ScreenMode.TODAY),
     onNavigateToCourse: (String?) -> Unit,
     navController: NavController,
     modifier: Modifier = Modifier,
-    courseRepository: CourseRepository = CourseRepository()
+    courseRepository: CourseRepository = CourseRepository(),
+    courseIdFromNotification: String? = null,
+    timeFromNotification: String? = null
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -67,13 +70,26 @@ fun HomeScreen(
             val result = courseRepository.getUserName()
             if (result.isSuccess) {
                 userName = result.getOrNull()!!
-                newName = userName // Инициализируем поле ввода
+                newName = userName
                 Log.d("HomeScreen", "User name loaded: $userName")
             } else {
                 userName = "Пользователь"
                 newName = ""
                 Log.e("HomeScreen", "Failed to load user name: ${result.exceptionOrNull()?.message}")
                 Toast.makeText(context, "Ошибка загрузки имени", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Обрабатываем уведомление
+    LaunchedEffect(courseIdFromNotification, timeFromNotification) {
+        if (courseIdFromNotification != null && timeFromNotification != null) {
+            val course = uiState.medications.find { it.courseId == courseIdFromNotification }
+            if (course != null) {
+                selectedMedication = course
+                selectedTime = timeFromNotification
+                showDialog = true
+                Log.d("HomeScreen", "Открыт диалог из уведомления: courseId=$courseIdFromNotification, time=$timeFromNotification")
             }
         }
     }
@@ -121,9 +137,21 @@ fun HomeScreen(
                         }
                     }
                     IconButton(onClick = {
-                        FirebaseAuth.getInstance().signOut()
-                        navController.navigate("auth") {
-                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        coroutineScope.launch {
+                            // Отменяем все уведомления
+                            //NotificationScheduler.cancelAllNotifications(context)
+                            // Отключаем уведомления для всех курсов
+                            val courses = courseRepository.getCourses().getOrNull() ?: emptyList()
+                            courses.forEach { course ->
+                                if (course.notificationsEnabled) {
+                                    val updatedCourse = course.copy(notificationsEnabled = false)
+                                    courseRepository.updateCourse(updatedCourse)
+                                }
+                            }
+                            FirebaseAuth.getInstance().signOut()
+                            navController.navigate("auth") {
+                                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                            }
                         }
                     }) {
                         Icon(
@@ -214,13 +242,13 @@ fun HomeScreen(
                                             null -> Icons.Default.RadioButtonUnchecked
                                             "refused" -> Icons.Default.Close
                                             "taken" -> Icons.Default.CheckCircle
-                                            else -> Icons.Default.CheckCircle // Для обратной совместимости
+                                            else -> Icons.Default.CheckCircle
                                         },
                                         contentDescription = "Статус приёма",
                                         tint = when (status) {
                                             null -> Color.Gray
                                             "refused" -> Color.Red
-                                            else -> Color(0xFF4CAF50) // Зелёный для принятого
+                                            else -> Color(0xFF4CAF50)
                                         }
                                     )
                                 }
@@ -244,7 +272,7 @@ fun HomeScreen(
                     null -> Text("Вы хотите принять или отказаться от дозы в $selectedTime?")
                     "refused" -> Text("Вы отказались от приёма в $selectedTime")
                     "taken" -> Text("Лекарство уже принято в $selectedTime")
-                    else -> Text("Лекарство уже принято в $selectedTime") // Для обратной совместимости
+                    else -> Text("Лекарство уже принято в $selectedTime")
                 }
             },
             confirmButton = {

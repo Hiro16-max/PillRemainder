@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import com.example.pillremainder.data.repository.CourseRepository
 
 val days = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
@@ -50,21 +51,28 @@ val days = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 fun CourseScreen(
     onSaveSuccess: () -> Unit,
     onBack: () -> Unit,
-    courseId: String? = null
+    courseId: String? = null,
+    repository: CourseRepository
 ) {
+    val context = LocalContext.current
     val viewModel: CourseViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return CourseViewModel(courseId = courseId ?: "") as T
+                return CourseViewModel(
+                    repository = repository,
+                    courseId = courseId ?: "",
+                    context = context.applicationContext
+                ) as T
             }
         }
     )
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) } // Защита от повторных нажатий
 
     LaunchedEffect(uiState.isSaved, uiState.isDeleted) {
         if (uiState.isSaved || uiState.isDeleted) {
+            Log.d("CourseScreen", "Курс сохранён или удалён, переход на onSaveSuccess")
             onSaveSuccess()
         }
     }
@@ -100,7 +108,7 @@ fun CourseScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = {
-                            Log.d("CourseScreen", "Back button clicked, calling onBack")
+                            Log.d("CourseScreen", "Нажата кнопка Назад")
                             onBack()
                         }) {
                             Icon(
@@ -120,7 +128,7 @@ fun CourseScreen(
                                 )
                             }
                         } else {
-                            Spacer(modifier = Modifier.size(48.dp)) // Балансировка для navigationIcon
+                            Spacer(modifier = Modifier.size(48.dp))
                         }
                     }
                 )
@@ -227,25 +235,21 @@ fun CourseScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 contentPadding = PaddingValues(vertical = 1.dp)
                             ) {
-                                items(days) { day ->
-                                    Log.d("FilterChip", "day = $day")
+                                items(days.size) { index ->
+                                    val day = days[index]
                                     FilterChip(
                                         selected = uiState.selectedDays.contains(day),
                                         onClick = { viewModel.toggleDay(day) },
-                                        enabled = true,
                                         label = {
                                             Text(
                                                 text = day,
                                                 style = MaterialTheme.typography.labelMedium,
-                                                color = if (uiState.selectedDays.contains(day)) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.padding(horizontal = 0.dp)
+                                                color = if (uiState.selectedDays.contains(day)) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                                             )
                                         },
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surface,
-                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            labelColor = MaterialTheme.colorScheme.onSurface,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
                                         ),
                                         border = FilterChipDefaults.filterChipBorder(
                                             borderColor = MaterialTheme.colorScheme.outline,
@@ -424,7 +428,7 @@ fun CourseScreen(
                             )
                             Switch(
                                 checked = uiState.notificationsEnabled,
-                                onCheckedChange = { viewModel.toggleNotifications(it) },
+                                onCheckedChange = { viewModel.toggleNotifications() },
                                 colors = SwitchDefaults.colors(
                                     checkedTrackColor = MaterialTheme.colorScheme.primary,
                                     checkedThumbColor = MaterialTheme.colorScheme.onPrimary
@@ -443,7 +447,14 @@ fun CourseScreen(
 
                 // Кнопка сохранения
                 Button(
-                    onClick = { viewModel.saveCourse() },
+                    onClick = {
+                        if (!isSaving) {
+                            Log.d("CourseScreen", "Нажата кнопка Сохранить")
+                            isSaving = true
+                            viewModel.saveCourse()
+                        }
+                    },
+                    enabled = !isSaving,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 16.dp),

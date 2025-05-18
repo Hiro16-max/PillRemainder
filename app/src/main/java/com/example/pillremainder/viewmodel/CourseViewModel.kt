@@ -1,20 +1,25 @@
 package com.example.pillremainder.viewmodel
 
+import android.content.Context
+import android.util.Log
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pillremainder.data.model.MedicineCourse
 import com.example.pillremainder.data.repository.CourseRepository
+import com.example.pillremainder.notifications.NotificationScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 class CourseViewModel(
-    private val repository: CourseRepository = CourseRepository(),
-    private val courseId: String = ""
+    private val repository: CourseRepository,
+    private val courseId: String = "",
+    private val context: Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CourseUiState(isEditMode = courseId.isNotEmpty(), isLoading = courseId.isNotEmpty()))
     val uiState: StateFlow<CourseUiState> = _uiState
@@ -101,8 +106,11 @@ class CourseViewModel(
         _uiState.update { it.copy(availablePills = pills) }
     }
 
-    fun toggleNotifications(enabled: Boolean) {
-        _uiState.update { it.copy(notificationsEnabled = enabled) }
+    fun toggleNotifications() {
+        _uiState.update { it.copy(notificationsEnabled = !it.notificationsEnabled) }
+        viewModelScope.launch {
+            repository.updateNotificationsEnabled(_uiState.value.courseId, _uiState.value.notificationsEnabled)
+        }
     }
 
     fun updateTime(index: Int, time: String) {
@@ -128,6 +136,7 @@ class CourseViewModel(
 
     fun saveCourse() {
         _uiState.update { currentState ->
+            if (currentState.isSaving) return@update currentState
             if (currentState.courseName.text.isBlank()) {
                 return@update currentState.copy(errorMessage = "Введите название курса")
             }
@@ -143,46 +152,48 @@ class CourseViewModel(
             }
             val availablePills = currentState.availablePills.toIntOrNull()
             if (availablePills == null || availablePills < 0) {
-                return@update currentState.copy(errorMessage = "Введите корректное количество таблеток (0 или больше)")
+                return@update currentState.copy(errorMessage = "Введите корректное количество таблеток")
             }
 
             viewModelScope.launch {
+                val newCourseId = if (currentState.isEditMode) currentState.courseId else UUID.randomUUID().toString()
                 val course = MedicineCourse(
                     name = currentState.courseName.text,
                     dosePerIntake = dosePerIntake,
                     intakeTime = currentState.selectedTimes,
                     days = if (currentState.selectedSchedule == "Свой график") currentState.selectedDays else emptyList(),
-                    courseId = currentState.courseId,
+                    courseId = newCourseId,
                     availablePills = availablePills,
                     notificationsEnabled = currentState.notificationsEnabled
                 )
+                Log.d("CourseViewModel", "saveCourse: Сохранение курса: ${course.name}, courseId: ${course.courseId}")
                 val result = if (currentState.isEditMode) {
                     repository.updateCourse(course)
                 } else {
                     repository.saveCourse(course)
                 }
                 _uiState.update {
-                    it.copy(
-                        errorMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message,
-                        isSaved = result.isSuccess
-                    )
+                    if (result.isSuccess) {
+                        it.copy(errorMessage = null, isSaved = true, isSaving = false)
+                    } else {
+                        it.copy(errorMessage = result.exceptionOrNull()?.message ?: "Ошибка сохранения", isSaving = false)
+                    }
                 }
             }
-            currentState.copy(errorMessage = null)
+            currentState.copy(errorMessage = null, isSaving = true)
         }
     }
 
     fun deleteCourse() {
-        if (!_uiState.value.isEditMode) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isSaving = true) }
             val result = repository.deleteCourse(_uiState.value.courseId)
             _uiState.update {
-                it.copy(
-                    errorMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message,
-                    isDeleted = result.isSuccess,
-                    isLoading = false
-                )
+                if (result.isSuccess) {
+                    it.copy(isSaved = true, isSaving = false)
+                } else {
+                    it.copy(errorMessage = result.exceptionOrNull()?.message ?: "Ошибка удаления", isSaving = false)
+                }
             }
         }
     }
@@ -201,5 +212,6 @@ data class CourseUiState(
     val errorMessage: String? = null,
     val isSaved: Boolean = false,
     val isDeleted: Boolean = false,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false
 )
