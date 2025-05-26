@@ -74,7 +74,7 @@ object NotificationWorker {
         // Создание уведомления
         val notification = try {
             NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert) // Замените на вашу иконку в res/drawable
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setContentTitle("Пора принять $courseName")
                 .setContentText("Запланированный приём в $time")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

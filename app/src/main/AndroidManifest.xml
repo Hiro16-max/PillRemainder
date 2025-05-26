@@ -38,7 +38,7 @@
             android:name=".notifications.AlarmReceiver"
             android:enabled="true"
             android:exported="false">
-            <intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="com.example.pillremainder.ALARM" />
             </intent-filter>
         </receiver>

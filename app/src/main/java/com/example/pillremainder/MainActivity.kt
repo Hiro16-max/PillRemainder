@@ -12,10 +12,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
 import com.example.pillremainder.data.repository.CourseRepository
 import com.example.pillremainder.ui.screens.AppNavigation
 import com.example.pillremainder.ui.theme.CreateCourseScreenTheme
 import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
 
 class MainActivity : ComponentActivity() {
@@ -24,7 +27,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.navigationBarColor = Color.Black.toArgb()
         // Запрос разрешения на уведомления для Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

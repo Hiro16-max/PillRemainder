@@ -13,13 +13,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.pillremainder.viewmodel.StatsViewModel
 import java.text.DecimalFormat
@@ -59,7 +62,6 @@ fun StatsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Анимация для сегментов круговой диаграммы
     val animatedTaken by animateFloatAsState(
         targetValue = uiState.pieChartData.takenPercent * 3.6f,
         animationSpec = tween(durationMillis = 1000),
@@ -76,262 +78,270 @@ fun StatsScreen(
         label = "missedPercentAnimation"
     )
 
-    // Обработка ошибок через Toast
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
         }
     }
 
-    Surface(
-        modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
+                .height(56.dp) // стандартная высота топ-бара
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Статистика",
+                        fontSize = 24.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
         if (uiState.isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
-                )
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
-                    .padding(16.dp)
-                    .systemBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Заголовок
-                item {
-                    Text(
-                        text = "Статистика",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-
                 // Фильтры
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        var expandedCourse by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expandedCourse,
+                            onExpandedChange = { expandedCourse = it },
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = "Фильтры",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            OutlinedTextField(
+                                value = uiState.selectedCourseId?.let { courseId ->
+                                    uiState.courses.find { it.courseId == courseId }?.name ?: "Все курсы"
+                                } ?: "Все курсы",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Курс") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCourse)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
                             )
-                            var expandedCourse by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
+                            ExposedDropdownMenu(
                                 expanded = expandedCourse,
-                                onExpandedChange = { expandedCourse = it }
+                                onDismissRequest = { expandedCourse = false }
                             ) {
-                                OutlinedTextField(
-                                    value = uiState.selectedCourseId?.let { courseId ->
-                                        uiState.courses.find { it.courseId == courseId }?.name ?: "Все курсы"
-                                    } ?: "Все курсы",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Курс") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCourse) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .menuAnchor()
+                                DropdownMenuItem(
+                                    text = { Text("Все курсы") },
+                                    onClick = {
+                                        viewModel.updateCourseFilter(null)
+                                        expandedCourse = false
+                                    }
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = expandedCourse,
-                                    onDismissRequest = { expandedCourse = false }
-                                ) {
+                                uiState.courses.forEach { courseItem ->
                                     DropdownMenuItem(
-                                        text = { Text("Все курсы") },
+                                        text = { Text(courseItem.name) },
                                         onClick = {
-                                            viewModel.updateCourseFilter(null)
+                                            viewModel.updateCourseFilter(courseItem.courseId)
                                             expandedCourse = false
                                         }
                                     )
-                                    uiState.courses.forEach { courseItem ->
-                                        DropdownMenuItem(
-                                            text = { Text(courseItem.name) },
-                                            onClick = {
-                                                viewModel.updateCourseFilter(courseItem.courseId)
-                                                expandedCourse = false
-                                            }
-                                        )
-                                    }
                                 }
                             }
-                            var expandedPeriod by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
+                        }
+
+                        var expandedPeriod by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expandedPeriod,
+                            onExpandedChange = { expandedPeriod = it },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = if (uiState.period == "week") "Неделя" else "Месяц",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Период") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPeriod)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            ExposedDropdownMenu(
                                 expanded = expandedPeriod,
-                                onExpandedChange = { expandedPeriod = it }
+                                onDismissRequest = { expandedPeriod = false }
                             ) {
-                                OutlinedTextField(
-                                    value = if (uiState.period == "week") "Неделя" else "Месяц",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Период") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPeriod) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .menuAnchor()
+                                DropdownMenuItem(
+                                    text = { Text("Неделя") },
+                                    onClick = {
+                                        viewModel.updatePeriod("week")
+                                        expandedPeriod = false
+                                    }
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = expandedPeriod,
-                                    onDismissRequest = { expandedPeriod = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Неделя") },
-                                        onClick = {
-                                            viewModel.updatePeriod("week")
-                                            expandedPeriod = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Месяц") },
-                                        onClick = {
-                                            viewModel.updatePeriod("month")
-                                            expandedPeriod = false
-                                        }
-                                    )
-                                }
+                                DropdownMenuItem(
+                                    text = { Text("Месяц") },
+                                    onClick = {
+                                        viewModel.updatePeriod("month")
+                                        expandedPeriod = false
+                                    }
+                                )
                             }
                         }
                     }
                 }
 
-                // Метрики
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                // Карточка с метриками и диаграммой
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Ключевые метрики",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color(0xFFBB86FC)
-                            )
+                        Text(
+                            text = "Ключевые метрики",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${DecimalFormat("0.#").format(uiState.complianceRate)}%",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Соблюдение",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Распределение приёмов",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (uiState.pieChartData.total == 0) {
                             Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "${DecimalFormat("0.#").format(uiState.complianceRate)}%",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "Соблюдение",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Круговая диаграмма
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Распределение приёмов",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (uiState.pieChartData.total == 0) {
                                 Text(
                                     text = "Нет данных о приёмах",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
                                     textAlign = TextAlign.Center
                                 )
-                            } else {
-                                AnimatedVisibility(
-                                    visible = true,
-                                    enter = expandVertically() + fadeIn(),
-                                    exit = fadeOut()
+                            }
+                        } else {
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = expandVertically() + fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .padding(8.dp)
                                     ) {
-                                        // Диаграмма
-                                        Canvas(
-                                            modifier = Modifier
-                                                .size(120.dp)
-                                                .padding(8.dp)
-                                        ) {
-                                            val sweepAngles = listOf(
-                                                animatedTaken,
-                                                animatedRefused,
-                                                animatedMissed
+                                        val sweepAngles = listOf(
+                                            animatedTaken,
+                                            animatedRefused,
+                                            animatedMissed
+                                        )
+                                        val colors = listOf(
+                                            Color(0xFF4CAF50), // Принято — зелёный
+                                            Color(0xFFF44336), // Отказано — красный
+                                            Color(0xFFB0BEC5)  // Пропущено — серый
+                                        )
+                                        var startAngle = 0f
+                                        sweepAngles.forEachIndexed { index, angle ->
+                                            drawArc(
+                                                color = colors[index],
+                                                startAngle = startAngle,
+                                                sweepAngle = angle,
+                                                useCenter = true,
+                                                topLeft = Offset.Zero,
+                                                size = Size(size.width, size.height)
                                             )
-                                            val colors = listOf(
-                                                Color(0xFF4CAF50), // Зелёный для принятых
-                                                Color(0xFFF44336), // Красный для отклонённых
-                                                Color(0xFFB0BEC5) // Серый для пропущенных
-                                            )
-                                            var startAngle = 0f
-                                            sweepAngles.forEachIndexed { index, angle ->
-                                                drawArc(
-                                                    color = colors[index],
-                                                    startAngle = startAngle,
-                                                    sweepAngle = angle,
-                                                    useCenter = true,
-                                                    topLeft = Offset.Zero,
-                                                    size = Size(size.width, size.height)
-                                                )
-                                                startAngle += angle
-                                            }
+                                            startAngle += angle
                                         }
-                                        // Легенда
-                                        Column(
-                                            modifier = Modifier.padding(start = 8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            LegendItem(
-                                                color = Color(0xFF4CAF50),
-                                                label = "Принято",
-                                                percent = uiState.pieChartData.takenPercent
-                                            )
-                                            LegendItem(
-                                                color = Color(0xFFF44336),
-                                                label = "Отказано",
-                                                percent = uiState.pieChartData.refusedPercent
-                                            )
-                                            LegendItem(
-                                                color = Color(0xFFB0BEC5),
-                                                label = "Пропущено",
-                                                percent = uiState.pieChartData.missedPercent
-                                            )
-                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.padding(top = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        LegendItem(
+                                            color = Color(0xFF4CAF50),
+                                            label = "Принято",
+                                            percent = uiState.pieChartData.takenPercent
+                                        )
+                                        LegendItem(
+                                            color = Color(0xFFF44336),
+                                            label = "Отказано",
+                                            percent = uiState.pieChartData.refusedPercent
+                                        )
+                                        LegendItem(
+                                            color = Color(0xFFB0BEC5),
+                                            label = "Пропущено",
+                                            percent = uiState.pieChartData.missedPercent
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

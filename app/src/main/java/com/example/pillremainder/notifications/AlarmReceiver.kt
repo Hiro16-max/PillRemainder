@@ -12,6 +12,9 @@ import android.widget.Toast
 import com.example.pillremainder.data.model.MedicineCourse
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
@@ -22,6 +25,7 @@ import java.util.Locale
 
 class AlarmReceiver : BroadcastReceiver() {
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
+
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "onReceive: Получен сигнал, action: ${intent.action}")
         if (intent.action != NotificationScheduler.ALARM_ACTION) {
@@ -55,32 +59,38 @@ class AlarmReceiver : BroadcastReceiver() {
 
         Log.d(TAG, "onReceive: Обработка для courseId: $courseId, courseName: $courseName, time: $time, day: $day")
 
-        runBlocking {
-            val db = FirebaseDatabase.getInstance()
-            val userId = FirebaseAuth.getInstance().currentUser?.uid ?: run {
-                Log.e(TAG, "onReceive: Пользователь не аутентифицирован")
-                return@runBlocking
-            }
-            val courseRef = db.getReference("Users").child(userId).child("courses").child(courseId)
-            try {
-                val snapshot = courseRef.get().await()
-                val course = snapshot.getValue(MedicineCourse::class.java)
-                if (course == null || !course.notificationsEnabled) {
-                    Log.d(TAG, "onReceive: Уведомления отключены или курс не найден для courseId: $courseId")
-                    return@runBlocking
-                }
-
-                Log.d(TAG, "onReceive: Вызов NotificationWorker для courseId: $courseId")
-                NotificationWorker.sendNotification(context, courseId, time, courseName)
-                scheduleNextAlarm(context, courseId, courseName, time, day)
-            } catch (e: Exception) {
-                Log.e(TAG, "onReceive: Ошибка получения курса для courseId: $courseId, error: ${e.message}", e)
-            }
+        // Запускаем тяжелую логику в фоновом потоке
+        CoroutineScope(Dispatchers.IO).launch {
+            processNotification(context, courseId, courseName, time, day)
         }
     }
 
-    private fun scheduleNextAlarm(context: Context, courseId: String, courseName: String, time: String, day: DayOfWeek) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+    private suspend fun processNotification(context: Context, courseId: String, courseName: String, time: String, day: DayOfWeek) {
+        val db = FirebaseDatabase.getInstance()
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: run {
+            Log.e(TAG, "processNotification: Пользователь не аутентифицирован")
+            return
+        }
+        val courseRef = db.getReference("Users").child(userId).child("courses").child(courseId)
+        try {
+            val snapshot = courseRef.get().await()
+            val course = snapshot.getValue(MedicineCourse::class.java)
+            if (course == null || !course.notificationsEnabled) {
+                Log.d(TAG, "processNotification: Уведомления отключены или курс не найден для courseId: $courseId")
+                return
+            }
+
+            Log.d(TAG, "processNotification: Вызов NotificationWorker для courseId: $courseId")
+            NotificationWorker.sendNotification(context, courseId, time, courseName)
+            scheduleNextAlarm(context, courseId, courseName, time, day)
+        } catch (e: Exception) {
+            Log.e(TAG, "processNotification: Ошибка получения курса для courseId: $courseId, error: ${e.message}", e)
+        }
+    }
+
+    @SuppressLint("ScheduleExactAlarm")
+    fun scheduleNextAlarm(context: Context, courseId: String, courseName: String, time: String, day: DayOfWeek) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             Log.w(TAG, "scheduleNextAlarm: Нет разрешения SCHEDULE_EXACT_ALARM для courseId: $courseId")
             Toast.makeText(context, "Разрешите точные уведомления в настройках", Toast.LENGTH_LONG).show()
