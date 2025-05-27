@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.pillremainder.data.utils.getTimesForm
 import com.example.pillremainder.viewmodel.MedicationsViewModel
+import com.example.pillremainder.data.utils.formatPills
 
 @Composable
 fun MedicationsScreen(
@@ -47,7 +48,9 @@ fun MedicationsScreen(
 
         // Список курсов
         Box(
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize()
         ) {
             if (uiState.isLoading && uiState.medications.isEmpty()) {
                 CircularProgressIndicator(
@@ -81,10 +84,18 @@ fun MedicationsScreen(
                                     color = Color.Gray
                                 )
                                 Text(
-                                    text = "Имеющихся таблеток: ${medication.availablePills}",
+                                    text = "Имеющихся таблеток: ${formatPills(medication.availablePills)}",
                                     fontSize = 14.sp,
                                     color = Color.Gray
                                 )
+                                if (medication.availablePills < 10) {
+                                    Text(
+                                        text = "Пополните запас",
+                                        fontSize = 14.sp,
+                                        color = Color.Red,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

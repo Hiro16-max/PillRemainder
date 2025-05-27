@@ -18,27 +18,19 @@ internal fun formatDose(dose: Double): String {
     }
 }
 
-// Возвращает правильную форму слова "таблетка" в зависимости от числа
-internal fun getTabletForm(dose: Double): String {
-    val intDose = dose.toInt()
-    return when {
-        dose == 1.0 -> "таблетка"
-        dose < 1.0 || dose > 20.0 -> {
-            when {
-                dose % 1.0 != 0.0 -> "таблетки" // Дробные, например, 0.5 -> "таблетки"
-                intDose % 10 == 1 -> "таблетка"
-                intDose % 10 in 2..4 -> "таблетки"
-                else -> "таблеток"
-            }
-        }
-        else -> "таблеток"
-    }
-}
 
 internal fun getTimesForm(count: Int): String {
     return when {
         count == 1 -> "раз"
         count in 2..4 -> "раза"
         else -> "раз"
+    }
+}
+
+internal fun formatPills(pills: Double): String {
+    return if (pills % 1.0 == 0.0) {
+        pills.toInt().toString()
+    } else {
+        String.format("%.2f", pills).trimEnd('0').trimEnd('.')
     }
 }

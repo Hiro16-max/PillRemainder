@@ -7,36 +7,27 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.pillremainder.viewmodel.MedicationsViewModel
 import com.example.pillremainder.data.model.MedicineCourse
 import com.example.pillremainder.data.repository.CourseRepository
 import com.example.pillremainder.data.utils.formatDose
-import com.example.pillremainder.data.utils.getTabletForm
-import com.example.pillremainder.notifications.NotificationScheduler
 import com.example.pillremainder.viewmodel.ScreenMode
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
@@ -63,6 +54,8 @@ fun HomeScreen(
     var newName by remember { mutableStateOf("") }
     var isNameUpdating by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    // Состояние для отслеживания обработанных уведомлений
+    var processedNotification by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Загружаем имя пользователя
     LaunchedEffect(Unit) {
@@ -71,25 +64,40 @@ fun HomeScreen(
             if (result.isSuccess) {
                 userName = result.getOrNull()!!
                 newName = userName
-                Log.d("HomeScreen", "User name loaded: $userName")
+                Log.d("HomeScreen", "Имя пользователя загружено: $userName")
             } else {
                 userName = "Пользователь"
                 newName = ""
-                Log.e("HomeScreen", "Failed to load user name: ${result.exceptionOrNull()?.message}")
-                Toast.makeText(context, "Ошибка загрузки имени", Toast.LENGTH_SHORT).show()
+                Log.e("HomeScreen", "Ошибка загрузки имени: ${result.exceptionOrNull()?.message}")
+                //Toast.makeText(context, "Ошибка загрузки имени", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     // Обрабатываем уведомление
-    LaunchedEffect(courseIdFromNotification, timeFromNotification) {
-        if (courseIdFromNotification != null && timeFromNotification != null) {
+    LaunchedEffect(courseIdFromNotification, timeFromNotification, uiState.medications) {
+        if (courseIdFromNotification != null && timeFromNotification != null &&
+            processedNotification != Pair(courseIdFromNotification, timeFromNotification)
+        ) {
+            if (uiState.isLoading) {
+                Log.d("HomeScreen", "Ожидание загрузки медикаментов для уведомления: courseId=$courseIdFromNotification, time=$timeFromNotification")
+                return@LaunchedEffect
+            }
             val course = uiState.medications.find { it.courseId == courseIdFromNotification }
             if (course != null) {
-                selectedMedication = course
-                selectedTime = timeFromNotification
-                showDialog = true
-                Log.d("HomeScreen", "Открыт диалог из уведомления: courseId=$courseIdFromNotification, time=$timeFromNotification")
+                val status = uiState.intakeStatuses["$courseIdFromNotification-$timeFromNotification"]
+                if (status == null || status == "refused") { // Показываем диалог только если статус не "taken"
+                    selectedMedication = course
+                    selectedTime = timeFromNotification
+                    showDialog = true
+                    processedNotification = Pair(courseIdFromNotification, timeFromNotification)
+                    Log.d("HomeScreen", "Открыт диалог из уведомления: courseId=$courseIdFromNotification, time=$timeFromNotification, status=$status")
+                } else {
+                    Log.d("HomeScreen", "Диалог не открыт, так как статус: $status")
+                }
+            } else {
+                Log.w("HomeScreen", "Курс не найден для courseId=$courseIdFromNotification")
+                Toast.makeText(context, "Курс не найден", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -138,9 +146,6 @@ fun HomeScreen(
                     }
                     IconButton(onClick = {
                         coroutineScope.launch {
-                            // Отменяем все уведомления
-                            //NotificationScheduler.cancelAllNotifications(context)
-                            // Отключаем уведомления для всех курсов
                             val courses = courseRepository.getCourses().getOrNull() ?: emptyList()
                             courses.forEach { course ->
                                 if (course.notificationsEnabled) {
@@ -208,9 +213,12 @@ fun HomeScreen(
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
                                     .clickable {
-                                        selectedMedication = medication
-                                        selectedTime = time
-                                        showDialog = true
+                                        val status = uiState.intakeStatuses["${medication.courseId}-$time"]
+                                        if (status == null || status == "refused") {
+                                            selectedMedication = medication
+                                            selectedTime = time
+                                            showDialog = true
+                                        }
                                     },
                                 elevation = CardDefaults.cardElevation(4.dp)
                             ) {
@@ -229,7 +237,7 @@ fun HomeScreen(
                                             color = Color.Black
                                         )
                                         Text(
-                                            text = "Принять ${formatDose(medication.dosePerIntake)} ${getTabletForm(medication.dosePerIntake)}",
+                                            text = "Принять ${formatDose(medication.dosePerIntake)}",
                                             fontSize = 14.sp,
                                             color = Color.Gray
                                         )
@@ -329,7 +337,7 @@ fun HomeScreen(
                                     Toast.makeText(context, "Имя обновлено", Toast.LENGTH_SHORT).show()
                                 } else {
                                     Toast.makeText(context, "Ошибка обновления имени", Toast.LENGTH_SHORT).show()
-                                    Log.e("HomeScreen", "Failed to update name: ${result.exceptionOrNull()?.message}")
+                                    Log.e("HomeScreen", "Ошибка обновления имени: ${result.exceptionOrNull()?.message}")
                                 }
                                 isNameUpdating = false
                             }

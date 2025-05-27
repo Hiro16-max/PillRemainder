@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pillremainder.data.model.MedicineCourse
 import com.example.pillremainder.data.repository.CourseRepository
-import com.example.pillremainder.data.repository.IntakeRecord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -103,8 +102,15 @@ class MedicationsViewModel(
             val result = repository.markIntake(courseId, time)
             _uiState.update {
                 val newStatuses = it.intakeStatuses + ("$courseId-$time" to "taken")
+                val updatedCoursesResult = repository.getCourses()
+                val updatedMedications = if (updatedCoursesResult.isSuccess) {
+                    updatedCoursesResult.getOrNull()!!
+                } else {
+                    it.medications
+                }
                 Log.d("MedicationsViewModel", "Обновлён статус для $courseId-$time: ${newStatuses["$courseId-$time"]}")
                 it.copy(
+                    medications = updatedMedications,
                     errorMessage = if (result.isSuccess) null else result.exceptionOrNull()?.message,
                     isLoading = false,
                     intakeStatuses = newStatuses

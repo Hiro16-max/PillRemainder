@@ -7,7 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pillremainder.data.model.MedicineCourse
 import com.example.pillremainder.data.repository.CourseRepository
-import com.example.pillremainder.notifications.NotificationScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -18,7 +17,7 @@ import java.util.UUID
 
 class CourseViewModel(
     private val repository: CourseRepository,
-    private val courseId: String = "",
+    courseId: String = "",
     private val context: Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CourseUiState(isEditMode = courseId.isNotEmpty(), isLoading = courseId.isNotEmpty()))
@@ -49,12 +48,12 @@ class CourseViewModel(
                         selectedTimes = course.intakeTime.ifEmpty { listOf("00:00") },
                         courseId = course.courseId,
                         isEditMode = true,
-                        errorMessage = null,
+                        errorMessages = emptyMap(),
                         isLoading = false
                     )
                 } else {
                     currentState.copy(
-                        errorMessage = result.exceptionOrNull()?.message,
+                        errorMessages = mapOf("general" to (result.exceptionOrNull()?.message ?: "Ошибка загрузки")),
                         isLoading = false
                     )
                 }
@@ -63,47 +62,102 @@ class CourseViewModel(
     }
 
     fun updateCourseName(name: TextFieldValue) {
-        _uiState.update { it.copy(courseName = name) }
+        _uiState.update { currentState ->
+            val errors = currentState.errorMessages.toMutableMap()
+            if (name.text.isBlank()) {
+                errors["courseName"] = "Введите название курса"
+            } else {
+                errors.remove("courseName")
+            }
+            currentState.copy(courseName = name, errorMessages = errors)
+        }
     }
 
     fun updateSchedule(schedule: String) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { currentState ->
+            val errors = currentState.errorMessages.toMutableMap()
+            if (schedule == "Свой график" && currentState.selectedDays.isEmpty()) {
+                errors["schedule"] = "Выберите хотя бы один день"
+            } else {
+                errors.remove("schedule")
+            }
+            currentState.copy(
                 selectedSchedule = schedule,
-                selectedDays = if (schedule != "Свой график") emptyList() else it.selectedDays
+                selectedDays = if (schedule != "Свой график") emptyList() else currentState.selectedDays,
+                errorMessages = errors
             )
         }
     }
 
     fun toggleDay(day: String) {
-        _uiState.update {
-            val currentDays = it.selectedDays
-            it.copy(
-                selectedDays = if (currentDays.contains(day)) currentDays - day else currentDays + day
+        _uiState.update { currentState ->
+            val currentDays = currentState.selectedDays
+            val newDays = if (currentDays.contains(day)) currentDays - day else currentDays + day
+            val errors = currentState.errorMessages.toMutableMap()
+            if (currentState.selectedSchedule == "Свой график" && newDays.isEmpty()) {
+                errors["schedule"] = "Выберите хотя бы один день"
+            } else {
+                errors.remove("schedule")
+            }
+            currentState.copy(
+                selectedDays = newDays,
+                errorMessages = errors
             )
         }
     }
 
     fun updateDosePerIntake(dose: String) {
-        _uiState.update { it.copy(dosePerIntake = dose) }
+        _uiState.update { currentState ->
+            val errors = currentState.errorMessages.toMutableMap()
+            val doseValue = dose.toDoubleOrNull()
+            if (doseValue == null || doseValue <= 0.0) {
+                errors["dose"] = "Введите корректную дозировку (больше 0)"
+            } else {
+                errors.remove("dose")
+            }
+            currentState.copy(dosePerIntake = dose, errorMessages = errors)
+        }
     }
 
     fun incrementDosePerIntake() {
         _uiState.update {
             val currentDose = it.dosePerIntake.toDoubleOrNull() ?: 0.0
-            it.copy(dosePerIntake = (currentDose + 0.25).coerceAtLeast(0.0).toString())
+            val newDose = (currentDose + 0.25).coerceAtLeast(0.0)
+            val errors = it.errorMessages.toMutableMap()
+            if (newDose <= 0.0) {
+                errors["dose"] = "Введите корректную дозировку (больше 0)"
+            } else {
+                errors.remove("dose")
+            }
+            it.copy(dosePerIntake = newDose.toString(), errorMessages = errors)
         }
     }
 
     fun decrementDosePerIntake() {
         _uiState.update {
             val currentDose = it.dosePerIntake.toDoubleOrNull() ?: 0.0
-            it.copy(dosePerIntake = (currentDose - 0.25).coerceAtLeast(0.0).toString())
+            val newDose = (currentDose - 0.25).coerceAtLeast(0.0)
+            val errors = it.errorMessages.toMutableMap()
+            if (newDose <= 0.0) {
+                errors["dose"] = "Введите корректную дозировку (больше 0)"
+            } else {
+                errors.remove("dose")
+            }
+            it.copy(dosePerIntake = newDose.toString(), errorMessages = errors)
         }
     }
 
     fun updateAvailablePills(pills: String) {
-        _uiState.update { it.copy(availablePills = pills) }
+        _uiState.update { currentState ->
+            val errors = currentState.errorMessages.toMutableMap()
+            val pillsValue = pills.toIntOrNull()
+            if (pillsValue == null || pillsValue < 0) {
+                errors["pills"] = "Введите корректное количество таблеток"
+            } else {
+                errors.remove("pills")
+            }
+            currentState.copy(availablePills = pills, errorMessages = errors)
+        }
     }
 
     fun toggleNotifications() {
@@ -114,10 +168,18 @@ class CourseViewModel(
     }
 
     fun updateTime(index: Int, time: String) {
-        _uiState.update {
-            val newTimes = it.selectedTimes.toMutableList().also { it[index] = time }
-            it.copy(
-                selectedTimes = newTimes.sortedBy { LocalTime.parse(it, timeFormatter) }
+        _uiState.update { currentState ->
+            val newTimes = currentState.selectedTimes.toMutableList().also { it[index] = time }
+            val errors = currentState.errorMessages.toMutableMap()
+            // Проверяем, есть ли дубликаты времени
+            if (newTimes.distinct().size != newTimes.size) {
+                errors["times"] = "Все времена приёма должны быть разными"
+            } else {
+                errors.remove("times")
+            }
+            currentState.copy(
+                selectedTimes = newTimes.sortedBy { LocalTime.parse(it, timeFormatter) },
+                errorMessages = errors
             )
         }
     }
@@ -130,40 +192,58 @@ class CourseViewModel(
             } else {
                 currentTimes.take(count).sortedBy { LocalTime.parse(it, timeFormatter) }
             }
-            currentState.copy(selectedTimes = newTimes)
+            val errors = currentState.errorMessages.toMutableMap()
+            // Проверяем, есть ли дубликаты времени
+            if (newTimes.distinct().size != newTimes.size) {
+                errors["times"] = "Все времена приёма должны быть разными"
+            } else {
+                errors.remove("times")
+            }
+            currentState.copy(selectedTimes = newTimes, errorMessages = errors)
         }
     }
 
     fun saveCourse() {
         _uiState.update { currentState ->
-            if (currentState.isSaving) return@update currentState
+            // Очищаем предыдущие ошибки
+            var newState = currentState.copy(errorMessages = emptyMap(), isSaving = true)
+
+            // Проверяем поля и собираем ошибки
+            val errors = mutableMapOf<String, String>()
             if (currentState.courseName.text.isBlank()) {
-                return@update currentState.copy(errorMessage = "Введите название курса")
+                errors["courseName"] = "Введите название курса"
             }
             if (currentState.selectedSchedule == "Свой график" && currentState.selectedDays.isEmpty()) {
-                return@update currentState.copy(errorMessage = "Выберите хотя бы один день")
+                errors["schedule"] = "Выберите хотя бы один день"
             }
-            if (currentState.selectedTimes.any { it == "00:00" }) {
-                return@update currentState.copy(errorMessage = "Выберите корректное время приёма")
+            // Проверяем, есть ли дубликаты времени
+            if (currentState.selectedTimes.distinct().size != currentState.selectedTimes.size) {
+                errors["times"] = "Все времена приёма должны быть разными"
             }
             val dosePerIntake = currentState.dosePerIntake.toDoubleOrNull()
             if (dosePerIntake == null || dosePerIntake <= 0.0) {
-                return@update currentState.copy(errorMessage = "Введите корректную дозировку (больше 0)")
+                errors["dose"] = "Введите корректную дозировку (больше 0)"
             }
-            val availablePills = currentState.availablePills.toIntOrNull()
+            val availablePills = currentState.availablePills.toDoubleOrNull()
             if (availablePills == null || availablePills < 0) {
-                return@update currentState.copy(errorMessage = "Введите корректное количество таблеток")
+                errors["pills"] = "Введите корректное количество таблеток"
             }
 
+            // Если есть ошибки, обновляем состояние с ошибками
+            if (errors.isNotEmpty()) {
+                return@update newState.copy(errorMessages = errors, isSaving = false)
+            }
+
+            // Если ошибок нет, сохраняем курс
             viewModelScope.launch {
                 val newCourseId = if (currentState.isEditMode) currentState.courseId else UUID.randomUUID().toString()
                 val course = MedicineCourse(
                     name = currentState.courseName.text,
-                    dosePerIntake = dosePerIntake,
+                    dosePerIntake = dosePerIntake!!,
                     intakeTime = currentState.selectedTimes,
                     days = if (currentState.selectedSchedule == "Свой график") currentState.selectedDays else emptyList(),
                     courseId = newCourseId,
-                    availablePills = availablePills,
+                    availablePills = availablePills!!,
                     notificationsEnabled = currentState.notificationsEnabled
                 )
                 Log.d("CourseViewModel", "saveCourse: Сохранение курса: ${course.name}, courseId: ${course.courseId}")
@@ -174,13 +254,16 @@ class CourseViewModel(
                 }
                 _uiState.update {
                     if (result.isSuccess) {
-                        it.copy(errorMessage = null, isSaved = true, isSaving = false)
+                        it.copy(errorMessages = emptyMap(), isSaved = true, isSaving = false)
                     } else {
-                        it.copy(errorMessage = result.exceptionOrNull()?.message ?: "Ошибка сохранения", isSaving = false)
+                        it.copy(
+                            errorMessages = mapOf("general" to (result.exceptionOrNull()?.message ?: "Ошибка сохранения")),
+                            isSaving = false
+                        )
                     }
                 }
             }
-            currentState.copy(errorMessage = null, isSaving = true)
+            newState.copy(errorMessages = errors, isSaving = true)
         }
     }
 
@@ -192,7 +275,7 @@ class CourseViewModel(
                 if (result.isSuccess) {
                     it.copy(isSaved = true, isSaving = false)
                 } else {
-                    it.copy(errorMessage = result.exceptionOrNull()?.message ?: "Ошибка удаления", isSaving = false)
+                    it.copy(errorMessages = mapOf("general" to (result.exceptionOrNull()?.message ?: "Ошибка удаления")), isSaving = false)
                 }
             }
         }
@@ -209,7 +292,7 @@ data class CourseUiState(
     val selectedTimes: List<String> = listOf("00:00"),
     val courseId: String = "",
     val isEditMode: Boolean = false,
-    val errorMessage: String? = null,
+    val errorMessages: Map<String, String> = emptyMap(),
     val isSaved: Boolean = false,
     val isDeleted: Boolean = false,
     val isLoading: Boolean = false,

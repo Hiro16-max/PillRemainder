@@ -7,10 +7,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,7 +39,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.pillremainder.viewmodel.CourseViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
@@ -55,6 +56,7 @@ fun CourseScreen(
     repository: CourseRepository
 ) {
     val context = LocalContext.current
+    Log.d("CourseScreen", "Контекст: ${context.javaClass.simpleName}")
     val viewModel: CourseViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -68,7 +70,7 @@ fun CourseScreen(
     )
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var isSaving by remember { mutableStateOf(false) } // Защита от повторных нажатий
+    var isSaving by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isSaved, uiState.isDeleted) {
         if (uiState.isSaved || uiState.isDeleted) {
@@ -77,8 +79,8 @@ fun CourseScreen(
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
+    LaunchedEffect(uiState.errorMessages) {
+        uiState.errorMessages["general"]?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
         }
     }
@@ -87,10 +89,11 @@ fun CourseScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding(),
-            contentAlignment = Alignment.Center
+                .padding(16.dp)
         ) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = MaterialTheme.colorScheme.primary)
         }
     } else {
         Scaffold(
@@ -164,11 +167,11 @@ fun CourseScreen(
                                 Icon(Icons.Default.Medication, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isError = uiState.errorMessage?.contains("название") == true
+                            isError = uiState.errorMessages.containsKey("courseName")
                         )
-                        if (uiState.errorMessage?.contains("название") == true) {
+                        uiState.errorMessages["courseName"]?.let { error ->
                             Text(
-                                text = uiState.errorMessage!!,
+                                text = error,
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -207,7 +210,7 @@ fun CourseScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
-                                isError = uiState.errorMessage?.contains("день") == true
+                                isError = uiState.errorMessages.containsKey("schedule")
                             )
                             ExposedDropdownMenu(
                                 expanded = expandedSchedule,
@@ -264,9 +267,9 @@ fun CourseScreen(
                                 }
                             }
                         }
-                        if (uiState.errorMessage?.contains("день") == true) {
+                        uiState.errorMessages["schedule"]?.let { error ->
                             Text(
-                                text = uiState.errorMessage!!,
+                                text = error,
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -307,7 +310,7 @@ fun CourseScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
-                                isError = uiState.errorMessage?.contains("время") == true
+                                isError = uiState.errorMessages.containsKey("times")
                             )
                             ExposedDropdownMenu(
                                 expanded = expandedIntakeCount,
@@ -331,16 +334,38 @@ fun CourseScreen(
                             } catch (e: Exception) {
                                 LocalTime.of(0, 0)
                             }
-                            OutlinedTextField(
-                                value = time,
-                                onValueChange = { viewModel.updateTime(index, it) },
-                                label = { Text("Время приёма ${index + 1}") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Schedule,
-                                        contentDescription = "Выбрать время",
-                                        modifier = Modifier.clickable {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp) // отступ для label
+                            ) {
+                                // "label", который как бы висит над рамкой
+                                Text(
+                                    text = "Время приёма ${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (uiState.errorMessages.containsKey("times"))
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .padding(start = 12.dp)
+                                        .offset(y = (-14).dp)
+                                        //.background(MaterialTheme.colorScheme.background)
+                                )
+
+                                // поле с рамкой и временем
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (uiState.errorMessages.containsKey("times"))
+                                                MaterialTheme.colorScheme.error
+                                            else
+                                                MaterialTheme.colorScheme.outline,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
                                             TimePickerDialog(
                                                 context,
                                                 { _, hourOfDay, minute ->
@@ -351,17 +376,28 @@ fun CourseScreen(
                                                 initialTime.minute,
                                                 true
                                             ).show()
-                                        },
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                isError = uiState.errorMessage?.contains("время") == true
-                            )
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp) // внутренняя прокладка
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = "Выбрать время",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = time,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
+                                    }
+                                }
+                            }
+
                         }
-                        if (uiState.errorMessage?.contains("время") == true) {
+                        uiState.errorMessages["times"]?.let { error ->
                             Text(
-                                text = uiState.errorMessage!!,
+                                text = error,
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -396,7 +432,7 @@ fun CourseScreen(
                                     Icon(Icons.Default.Medication, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                 },
                                 modifier = Modifier.weight(1f),
-                                isError = uiState.errorMessage?.contains("дозировка") == true
+                                isError = uiState.errorMessages.containsKey("dose")
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(onClick = { viewModel.decrementDosePerIntake() }) {
@@ -405,6 +441,13 @@ fun CourseScreen(
                             IconButton(onClick = { viewModel.incrementDosePerIntake() }) {
                                 Icon(Icons.Default.Add, contentDescription = "Увеличить", tint = MaterialTheme.colorScheme.primary)
                             }
+                        }
+                        uiState.errorMessages["dose"]?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                         OutlinedTextField(
                             value = uiState.availablePills,
@@ -415,8 +458,15 @@ fun CourseScreen(
                                 Icon(Icons.Default.Medication, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isError = uiState.errorMessage?.contains("таблеток") == true
+                            isError = uiState.errorMessages.containsKey("pills")
                         )
+                        uiState.errorMessages["pills"]?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -435,9 +485,9 @@ fun CourseScreen(
                                 )
                             )
                         }
-                        if (uiState.errorMessage?.contains("дозировка|таблеток") == true) {
+                        uiState.errorMessages["general"]?.let { error ->
                             Text(
-                                text = uiState.errorMessage!!,
+                                text = error,
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -452,9 +502,9 @@ fun CourseScreen(
                             Log.d("CourseScreen", "Нажата кнопка Сохранить")
                             isSaving = true
                             viewModel.saveCourse()
+                            isSaving = false
                         }
                     },
-                    enabled = !isSaving,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 16.dp),
@@ -507,4 +557,3 @@ fun CourseScreen(
         }
     }
 }
-

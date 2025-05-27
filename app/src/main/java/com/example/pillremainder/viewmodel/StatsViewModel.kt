@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 data class StatsUiState(
     val complianceRate: Double = 0.0,
@@ -49,6 +49,17 @@ class StatsViewModel(
     private val _uiState = MutableStateFlow(StatsUiState())
     val uiState: StateFlow<StatsUiState> = _uiState.asStateFlow()
 
+    // Маппинг дней недели для нормализации
+    private val dayOfWeekMap = mapOf(
+        DayOfWeek.MONDAY to "Пн",
+        DayOfWeek.TUESDAY to "Вт",
+        DayOfWeek.WEDNESDAY to "Ср",
+        DayOfWeek.THURSDAY to "Чт",
+        DayOfWeek.FRIDAY to "Пт",
+        DayOfWeek.SATURDAY to "Сб",
+        DayOfWeek.SUNDAY to "Вс"
+    )
+
     init {
         loadStats()
     }
@@ -65,7 +76,7 @@ class StatsViewModel(
                 }
                 val courses = coursesResult.getOrNull()!!
                 val courseItems = courses.map { CourseItem(it.name, it.courseId) }
-                Log.d("StatsViewModel", "Loaded ${courses.size} courses: ${courseItems.map { it.name }}")
+                Log.d("StatsViewModel", "Загружено ${courses.size} курсов: ${courseItems.map { it.name }}")
 
                 val startDate = when (period) {
                     "week" -> LocalDate.now().minusDays(6)
@@ -91,7 +102,7 @@ class StatsViewModel(
                     }
                     return@launch
                 }
-                Log.d("StatsViewModel", "Target courses: ${targetCourses.map { it.name }}")
+                Log.d("StatsViewModel", "Целевые курсы: ${targetCourses.map { it.name }}")
 
                 val historyResult = repository.getAllIntakeHistories(
                     courseIds = targetCourses.map { it.courseId },
@@ -101,7 +112,7 @@ class StatsViewModel(
                 val intakeHistories = if (historyResult.isSuccess) {
                     historyResult.getOrNull() ?: emptyMap()
                 } else {
-                    Log.e("StatsViewModel", "Error fetching histories: ${historyResult.exceptionOrNull()?.message}")
+                    Log.e("StatsViewModel", "Ошибка загрузки истории: ${historyResult.exceptionOrNull()?.message}")
                     emptyMap()
                 }
 
@@ -120,24 +131,26 @@ class StatsViewModel(
 
                 for (date in dateRange) {
                     val dateRecords = historyByDate[date] ?: emptyList()
+                    val localDate = LocalDate.parse(date)
+                    val dayOfWeek = dayOfWeekMap[localDate.dayOfWeek] ?: ""
 
                     for (course in targetCourses) {
-                        val dayOfWeek = LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEE"))
-                            .replaceFirstChar { it.uppercaseChar() }.let {
-                                when (it) {
-                                    "Mon" -> "Пн"
-                                    "Tue" -> "Вт"
-                                    "Wed" -> "Ср"
-                                    "Thu" -> "Чт"
-                                    "Fri" -> "Пт"
-                                    "Sat" -> "Сб"
-                                    "Sun" -> "Вс"
-                                    else -> ""
-                                }
+                        // Нормализуем course.days для единообразия
+                        val normalizedCourseDays = course.days.map { day ->
+                            when (day.lowercase()) {
+                                "пн", "понедельник", "mon", "monday" -> "Пн"
+                                "вт", "вторник", "tue", "tuesday" -> "Вт"
+                                "ср", "среда", "wed", "wednesday" -> "Ср"
+                                "чт", "четверг", "thu", "thursday" -> "Чт"
+                                "пт", "пятница", "fri", "friday" -> "Пт"
+                                "сб", "суббота", "sat", "saturday" -> "Сб"
+                                "вс", "воскресенье", "sun", "sunday" -> "Вс"
+                                else -> day
                             }
-                        val isScheduled = course.days.isEmpty() || course.days.contains(dayOfWeek)
+                        }
+                        val isScheduled = course.days.isEmpty() || normalizedCourseDays.contains(dayOfWeek)
                         if (!isScheduled) {
-                            Log.d("StatsViewModel", "Course ${course.name} not scheduled on $date ($dayOfWeek)")
+                            Log.d("StatsViewModel", "Курс ${course.name} не запланирован на $date ($dayOfWeek), course.days=$normalizedCourseDays")
                             continue
                         }
 
@@ -146,7 +159,7 @@ class StatsViewModel(
                             2 -> listOf("08:00", "20:00")
                             else -> emptyList()
                         }
-                        Log.d("StatsViewModel", "Course ${course.name}: intakeTimes=$intakeTimes on $date")
+                        Log.d("StatsViewModel", "Курс ${course.name}: intakeTimes=$intakeTimes на $date")
 
                         for (time in intakeTimes) {
                             totalPlanned++
@@ -167,7 +180,7 @@ class StatsViewModel(
 
                 val complianceRate = if (totalPlanned > 0) (totalTaken.toDouble() / totalPlanned * 100) else 0.0
                 val loadTime = System.currentTimeMillis() - startTime
-                Log.d("StatsViewModel", "Stats loaded in ${loadTime}ms: complianceRate=$complianceRate, totalPlanned=$totalPlanned, pieTaken=$pieTaken, pieRefused=$pieRefused, pieMissed=$pieMissed")
+                Log.d("StatsViewModel", "Статистика загружена за ${loadTime}ms: complianceRate=$complianceRate, totalPlanned=$totalPlanned, pieTaken=$pieTaken, pieRefused=$pieRefused, pieMissed=$pieMissed")
 
                 _uiState.update {
                     it.copy(
@@ -180,7 +193,7 @@ class StatsViewModel(
                     )
                 }
             } catch (e: Exception) {
-                Log.e("StatsViewModel", "Error loading stats: ${e.message}", e)
+                Log.e("StatsViewModel", "Ошибка загрузки статистики: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
         }

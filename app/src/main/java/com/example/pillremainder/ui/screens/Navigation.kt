@@ -12,16 +12,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.pillremainder.data.repository.CourseRepository
-import com.example.pillremainder.viewmodel.AuthViewModel
-import com.example.pillremainder.viewmodel.CourseViewModel
 import com.example.pillremainder.viewmodel.MedicationsViewModel
 import com.example.pillremainder.viewmodel.ScreenMode
 import com.example.pillremainder.viewmodel.StatsViewModel

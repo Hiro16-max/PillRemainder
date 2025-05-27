@@ -1,21 +1,13 @@
 package com.example.pillremainder.viewmodel
 
 import android.util.Log
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pillremainder.data.repository.AuthRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import android.util.Patterns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.FirebaseDatabase
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.tasks.await
 
 data class AuthUiState(
     val email: String = "",
@@ -29,8 +21,7 @@ data class AuthUiState(
 )
 
 class AuthViewModel : ViewModel() {
-    private val auth = FirebaseAuth.getInstance()
-    private val database = FirebaseDatabase.getInstance()
+    private val auth = AuthRepository()
 
     var uiState by mutableStateOf(AuthUiState())
         private set
@@ -61,7 +52,7 @@ class AuthViewModel : ViewModel() {
 
     fun authenticate() {
         if (uiState.email.isBlank() || uiState.password.isBlank() ||
-            (!uiState.isLoginMode && (uiState.name.isBlank() || uiState.secondPassword.isBlank()))
+            (!uiState.isLoginMode && ( uiState.secondPassword.isBlank()))
         ) {
             uiState = uiState.copy(errorMessage = "Пожалуйста, заполните все поля")
             return
@@ -82,15 +73,9 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 if (uiState.isLoginMode) {
-                    auth.signInWithEmailAndPassword(uiState.email, uiState.password).await()
+                    auth.loginUser(uiState.email, uiState.password)
                 } else {
-                    val result = auth.createUserWithEmailAndPassword(uiState.email, uiState.password).await()
-                    val userId = result.user?.uid
-                    if (userId != null) {
-                        val profileRef = database.getReference("Users").child(userId).child("profile")
-                        profileRef.child("name").setValue(uiState.name).await()
-                        Log.d("AuthViewModel", "Name saved for user: $userId, name: ${uiState.name}")
-                    }
+                    auth.registerUser(uiState.email, uiState.password)
                 }
                 uiState = uiState.copy(isLoading = false, isAuthenticated = true)
             } catch (e: Exception) {

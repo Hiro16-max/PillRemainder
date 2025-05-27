@@ -267,18 +267,26 @@ class CourseRepository(
 
     suspend fun markIntake(courseId: String, time: String): Result<Unit> {
         return try {
-            val userId =
-                auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
+            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
             val date = LocalDate.now().toString()
-            val intakeRef =
-                database.getReference("Users").child(userId).child("intakes").child(courseId)
-                    .child(time).child("history")
+            val intakeRef = database.getReference("Users").child(userId).child("intakes").child(courseId).child(time).child("history")
+            val courseRef = database.getReference("Users").child(userId).child("courses").child(courseId)
+
+            val courseSnapshot = courseRef.get().await()
+            val course = courseSnapshot.getValue(MedicineCourse::class.java)
+                ?: return Result.failure(Exception("Course not found"))
+
+            val newPillCount = maxOf(0.0, course.availablePills - course.dosePerIntake)
+
+            courseRef.child("availablePills").setValue(newPillCount).await()
+            _cachedCourses.update { courses ->
+                courses.map { if (it.courseId == courseId) it.copy(availablePills = newPillCount) else it }
+            }
+
             intakeRef.child(date).setValue("taken").await()
             _cachedIntakeStatuses.update { it + ("$courseId-$time" to "taken") }
-            Log.d(
-                "CourseRepository",
-                "Intake marked: courseId=$courseId, time=$time, date=$date, status=taken"
-            )
+
+            Log.d("CourseRepository", "Intake marked: courseId=$courseId, time=$time, date=$date, status=taken, newPillCount=$newPillCount")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(
