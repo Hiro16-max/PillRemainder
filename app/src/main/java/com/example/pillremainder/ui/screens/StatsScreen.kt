@@ -349,9 +349,9 @@ fun StatsScreen(
 
 @Composable
 private fun LegendItem(color: Color, label: String, percent: Float) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
@@ -361,7 +361,8 @@ private fun LegendItem(color: Color, label: String, percent: Float) {
         Text(
             text = "$label (${DecimalFormat("0.#").format(percent)}%)",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
     }
 }
